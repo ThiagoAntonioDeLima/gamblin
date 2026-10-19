@@ -82,7 +82,11 @@ function Trophy() {
   </svg>
 }
 
-export function AnimalRace({ race, onClose }: { race: RaceResult; onClose: () => void }) {
+export function AnimalRace({ race, onClose, onFinished }: {
+  race: RaceResult
+  onClose: () => void
+  onFinished?: (raceId: string) => void
+}) {
   const [phase, setPhase] = useState<RacePhase>('ready')
   const [reducedMotion, setReducedMotion] = useState(false)
   const dialogRef = useRef<HTMLElement>(null)
@@ -90,9 +94,11 @@ export function AnimalRace({ race, onClose }: { race: RaceResult; onClose: () =>
   const runnerRefs = useRef<(HTMLDivElement | null)[]>([])
   const finishedRef = useRef(false)
   const closeRef = useRef(onClose)
+  const onFinishedRef = useRef(onFinished)
   const titleId = useId()
   const descriptionId = useId()
   closeRef.current = onClose
+  onFinishedRef.current = onFinished
   const selected = ANIMALS.find(animal => animal.id === race.selected)!
   const winner = ANIMALS.find(animal => animal.id === race.winner)!
   const won = race.selected === race.winner
@@ -145,7 +151,7 @@ export function AnimalRace({ race, onClose }: { race: RaceResult; onClose: () =>
     runnerRefs.current.forEach(runner => runner?.style.setProperty('--race-progress', '0'))
 
     function complete() {
-      if (disposed) return
+      if (disposed || finishedRef.current) return
       cancelAnimationFrame(animationFrame)
       runnerRefs.current.forEach((runner, index) => {
         const animal = ANIMALS[index]!
@@ -154,6 +160,7 @@ export function AnimalRace({ race, onClose }: { race: RaceResult; onClose: () =>
       })
       finishedRef.current = true
       setPhase('finished')
+      onFinishedRef.current?.(race.id)
     }
 
     function animate(now: number) {

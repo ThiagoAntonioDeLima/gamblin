@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { AnimalRace } from './components/AnimalRace.tsx'
 import { ChoiceDialog } from './components/ChoiceDialog.tsx'
+import { RunSummaryDialog } from './components/RunSummaryDialog.tsx'
+import { FloatingNumbers } from './components/FloatingNumbers.tsx'
 import { BoxArt, BOX_VISUALS } from './components/BoxArt.tsx'
 import { getChoices, getOpeningCost, getRunValue, RARITY_LABELS, RARITY_VALUES, RELIC_LABELS } from './game/engine.ts'
 import type { GameAction, GameState, Rarity, RelicId, Run, Upgrade } from './game/engine.ts'
@@ -10,6 +12,7 @@ import type { LootboxId } from './game/lootboxes.ts'
 import { useGame } from './useGame.ts'
 import './styles.css'
 import './casino-layout.css'
+import './house-hud.css'
 
 const rarities: Rarity[] = ['comum', 'rara', 'epica', 'lendaria']
 const boxNames = Object.fromEntries(lootboxes.map(box => [box.id, box.name]))
@@ -125,7 +128,7 @@ function Store({ state, dispatch }: { state: GameState; dispatch: Dispatch }) {
 }
 
 export function App() {
-  const { state, dispatch, storageUnavailable } = useGame()
+  const { state, dispatch, storageUnavailable, feedback, clearFeedback, releaseRaceFeedback } = useGame()
   const { run, profile } = state
   const [opening, setOpening] = useState<Opening | null>(null)
   const [queuePage, setQueuePage] = useState(0)
@@ -134,7 +137,9 @@ export function App() {
   const openingHeading = useRef<HTMLHeadingElement>(null)
   const choices = getChoices(state)
   const cost = run ? getOpeningCost(run) : 1
-  const busy = Boolean(opening || state.lastRace)
+  const summaryPending = Boolean(!run && state.result?.id && state.result.closed === false)
+  const summaryVisible = summaryPending && !opening && !state.lastRace
+  const busy = Boolean(opening || state.lastRace || summaryPending)
   const sceneBlocked = busy || Boolean(run?.pending)
   const canAct = Boolean(run?.starterOpened && !run.pending && !busy)
   const pageCount = Math.max(1, Math.ceil((run?.queue.length ?? 0) / 3))
@@ -152,9 +157,15 @@ export function App() {
     restoreGameFocus()
   }, [dispatch, restoreGameFocus])
 
+  const closeSummary = () => {
+    if (!state.result?.id) return
+    dispatch({ type: 'dismiss-result', resultId: state.result.id })
+    restoreGameFocus()
+  }
+
   const choose = (choiceId: string) => {
     const next = dispatch({ type: 'choose', choiceId })
-    if (!next.run?.pending && !next.lastRace) restoreGameFocus()
+    if (next.run && !next.run.pending && !next.lastRace) restoreGameFocus()
   }
 
   const beginOpening = (action: GameAction, type: Opening['type'], rarity?: Rarity) => {
@@ -171,7 +182,7 @@ export function App() {
       const next = dispatch(opening.action)
       openingLock.current = false
       setOpening(null)
-      if (!next.run?.pending) restoreGameFocus()
+      if (next.run && !next.run.pending) restoreGameFocus()
     }, duration)
     return () => window.clearTimeout(timer)
   }, [opening, dispatch, restoreGameFocus])
@@ -187,7 +198,7 @@ export function App() {
 
   const hud = run && <section className="casino-hud run-overview panel" aria-label="Recursos da expedição">
     <div className="section-heading">
-      <div><p className="eyebrow">A casa está aberta</p><h2>Andar {run.floor}<span className="muted"> / 3</span></h2></div>
+      <div><p className="eyebrow">A casa está aberta</p><h2><span className="floor-current">Andar {run.floor}</span><span className="muted"> / 3</span></h2></div>
       <span className="tag">{run.opened >= 5 ? 'Chefe disponível' : `${run.opened}/5 para o chefe`}</span>
     </div>
     <dl className="resource-grid">
@@ -285,6 +296,8 @@ export function App() {
         <p>Revelando sua próxima jogada…</p><div className="opening-progress" aria-hidden="true" />
       </div>
     </div>}
-    {state.lastRace && <AnimalRace key={state.lastRace.id} race={state.lastRace} onClose={closeRace} />}
+    {state.lastRace && <AnimalRace key={state.lastRace.id} race={state.lastRace} onClose={closeRace} onFinished={releaseRaceFeedback} />}
+    {summaryVisible && state.result && <RunSummaryDialog key={state.result.id} result={state.result} onContinue={closeSummary} />}
+    <FloatingNumbers events={feedback} onComplete={clearFeedback} />
   </>
 }

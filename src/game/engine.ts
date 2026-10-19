@@ -53,6 +53,8 @@ export interface Run {
   coins: number
   keys: number
   opened: number
+  /** Absent on saves made before expedition-wide statistics were recorded. */
+  totalOpened?: number
   queue: Box[]
   inventory: Reward[]
   relics: RelicId[]
@@ -70,6 +72,22 @@ export interface Run {
   starterOpened: boolean
 }
 
+export type RunEndReason = 'manual-retreat' | 'insufficient-energy' | 'mimic' | 'thief' | 'boss' | 'health-depleted' | 'final-boss'
+
+export interface RunResources {
+  health: number
+  maxHealth: number
+  energy: number
+  coins: number
+  keys: number
+  inventory: Record<Rarity, number>
+  relics: Partial<Record<RelicId, number>>
+  boxes: string[]
+  incubators: number
+  insured: boolean
+  curse: number
+}
+
 export interface RunResult {
   outcome: 'retreat' | 'defeat' | 'victory'
   loot: number
@@ -77,6 +95,11 @@ export interface RunResult {
   essence: number
   floor: number
   log: string[]
+  totalOpened?: number
+  reason?: RunEndReason
+  id?: string
+  closed?: boolean
+  finalResources?: RunResources
 }
 
 export type AnimalId = typeof ANIMALS[number]['id']
@@ -106,6 +129,7 @@ export interface Choice {
 export type GameAction =
   | { type: 'start' }
   | { type: 'dismiss-race' }
+  | { type: 'dismiss-result'; resultId: string }
   | { type: 'starter' }
   | { type: 'open'; boxId: string }
   | { type: 'choose'; choiceId: string }
@@ -118,6 +142,16 @@ export type GameAction =
 const RARITIES: Rarity[] = ['comum', 'rara', 'epica', 'lendaria']
 const RELICS: RelicId[] = ['ima', 'bateria', 'coracao', 'casca', 'ninho']
 const BOX_TYPES: string[] = lootboxes.map(box => box.id)
+
+export const RUN_END_REASON_LABELS: Record<RunEndReason, string> = {
+  'manual-retreat': 'Você decidiu retirar e guardar o saque.',
+  'insufficient-energy': 'Energia insuficiente para abrir a próxima caixa.',
+  mimic: 'Sua vida acabou ao enfrentar a Mímica.',
+  thief: 'Sua vida acabou na cobrança do Guardião após o roubo.',
+  boss: 'Sua vida acabou no confronto com o chefe.',
+  'health-depleted': 'Sua vida acabou.',
+  'final-boss': 'Você venceu o chefe do terceiro andar.',
+}
 
 export const RARITY_VALUES: Record<Rarity, number> = {
   comum: 2,
@@ -194,6 +228,17 @@ function validRace(value: unknown): value is RaceResult {
     value.payout === (value.winner === value.selected ? value.stake * 3 : 0)
 }
 
+function validRunResources(value: unknown): value is RunResources {
+  if (!record(value) || !integer(value.maxHealth, 1) || !integer(value.health, 0, value.maxHealth) ||
+    !integer(value.energy) || !integer(value.coins) || !integer(value.keys) || !integer(value.incubators) ||
+    !integer(value.curse) || typeof value.insured !== 'boolean' || !record(value.inventory) || !record(value.relics) ||
+    !strings(value.boxes) || value.boxes.length > 12 || value.boxes.some(id => !entityId(id)) ||
+    new Set(value.boxes).size !== value.boxes.length) return false
+  const inventory = value.inventory
+  return RARITIES.every(item => integer(inventory[item])) &&
+    Object.entries(value.relics).every(([key, amount]) => relic(key) && integer(amount))
+}
+
 function validPending(value: unknown): value is Pending {
   if (!record(value) || !validBox(value.box) || typeof value.kind !== 'string' || !BOX_TYPES.includes(value.kind)) return false
   if (value.kind === 'espelho' || (value.kind !== value.box.type && (value.box.type !== 'espelho' || value.kind === 'chefe'))) return false
@@ -225,6 +270,7 @@ function validRun(value: unknown): value is Run {
     !integer(value.keys) || !integer(value.opened) || !integer(value.curse) || !integer(value.heat) ||
     !integer(value.nextId, 1) || !integer(value.shellUsed) || typeof value.insured !== 'boolean' || typeof value.starterOpened !== 'boolean' ||
     !['neutro', 'bosque', 'bazar', 'ruinas'].includes(value.biome as string) || !strings(value.log)) return false
+  if (value.totalOpened !== undefined && !integer(value.totalOpened, value.opened + (value.floor - 1) * 6)) return false
   if (!Array.isArray(value.queue) || value.queue.length > 12 || !value.queue.every(validBox) || value.queue.some(box => box.type === 'chefe')) return false
   if (!Array.isArray(value.inventory) || !value.inventory.every(item => record(item) && entityId(item.id) && rarity(item.rarity))) return false
   if (!Array.isArray(value.relics) || !value.relics.every(relic)) return false
@@ -237,6 +283,7 @@ function validRun(value: unknown): value is Run {
     value.incubators.length !== 0 || value.opened !== 0 || value.floor !== 1 || value.coins !== 0 || value.keys !== 0 ||
     value.relics.length !== 0 || value.contract !== null || value.insured || value.curse !== 0 || value.heat !== 0 ||
     value.biome !== 'neutro' || value.lastBox !== null || value.shellUsed !== 0 || value.nextId !== 1)) return false
+  if (!value.starterOpened && value.totalOpened !== undefined && value.totalOpened !== 0) return false
   const ids = [
     ...value.queue.map(box => box.id),
     ...value.inventory.map(item => item.id),
@@ -272,6 +319,17 @@ export function isGameState(value: unknown): value is GameState {
     if (!record(result) || !['retreat', 'defeat', 'victory'].includes(result.outcome as string) ||
       !integer(result.loot) || !integer(result.kept, 0, result.loot) || !integer(result.essence) ||
       !integer(result.floor, 1, 3) || !strings(result.log)) return false
+    const minimumOpenings = result.outcome === 'victory' ? 18 : (result.floor - 1) * 6
+    if (result.totalOpened !== undefined && !integer(result.totalOpened, minimumOpenings)) return false
+    if (result.reason !== undefined && (typeof result.reason !== 'string' || !Object.hasOwn(RUN_END_REASON_LABELS, result.reason))) return false
+    if (result.reason !== undefined) {
+      const allowedReasons = result.outcome === 'victory' ? ['final-boss'] : result.outcome === 'retreat' ?
+        ['manual-retreat', 'insufficient-energy'] : ['mimic', 'thief', 'boss', 'health-depleted']
+      if (!allowedReasons.includes(result.reason as string) || (result.reason === 'final-boss' && result.floor !== 3)) return false
+    }
+    if (result.id !== undefined && !entityId(result.id)) return false
+    if (result.closed !== undefined && typeof result.closed !== 'boolean') return false
+    if (result.finalResources !== undefined && !validRunResources(result.finalResources)) return false
   }
   return value.run === null || value.result === null
 }
@@ -352,6 +410,27 @@ export function getRunValue(run: Run): number {
     run.incubators.reduce((total, item) => total + RARITY_VALUES[incubatorRarity(item)], 0)
 }
 
+/** Resource totals for visual feedback; never rolls or applies a game effect. */
+export function snapshotRunResources(run: Run): RunResources {
+  const inventory: Record<Rarity, number> = { comum: 0, rara: 0, epica: 0, lendaria: 0 }
+  for (const reward of run.inventory) inventory[reward.rarity]++
+  const relics: Partial<Record<RelicId, number>> = {}
+  for (const id of run.relics) relics[id] = (relics[id] ?? 0) + 1
+  return {
+    health: run.health,
+    maxHealth: run.maxHealth,
+    energy: run.energy,
+    coins: run.coins,
+    keys: run.keys,
+    inventory,
+    relics,
+    boxes: run.queue.map(box => box.id),
+    incubators: run.incubators.length,
+    insured: run.insured,
+    curse: run.curse,
+  }
+}
+
 export function getOpeningCost(run: Run): number {
   return 1 + run.curse
 }
@@ -374,6 +453,7 @@ function completeContract(run: Run): void {
 function advanceOpening(run: Run, box: Box, profile: Profile): void {
   run.energy -= getOpeningCost(run)
   run.opened++
+  if (run.totalOpened !== undefined) run.totalOpened++
   for (const incubator of run.incubators) incubator.age = Math.min(3, incubator.age + 1)
   if (run.contract && run.contract.remaining > 0) run.contract.remaining--
   const coins = 2 + profile.upgrades.fortune + relicCount(run, 'ima')
@@ -390,7 +470,7 @@ function damage(run: Run, amount: number): void {
   run.health = Math.max(0, run.health - (amount - protection))
 }
 
-function finish(state: GameState, outcome: RunResult['outcome']): void {
+function finish(state: GameState, outcome: RunResult['outcome'], reason: RunEndReason): void {
   const run = state.run!
   breakContract(run)
   const loot = getRunValue(run)
@@ -404,20 +484,28 @@ function finish(state: GameState, outcome: RunResult['outcome']): void {
   if (outcome === 'victory') state.profile.wins++
   const descriptions = { retreat: 'Retirada', defeat: 'Derrota', victory: 'Vitória' }
   log(run, `${descriptions[outcome]}: ${kept} de ${loot} moedas de saque guardadas; +${essence} essência(s).`)
-  state.result = { outcome, loot, kept, essence, floor: run.floor, log: [...run.log] }
+  state.result = {
+    outcome, loot, kept, essence, floor: run.floor, log: [...run.log],
+    ...(run.totalOpened !== undefined ? { totalOpened: run.totalOpened } : {}),
+    reason,
+    id: `result:${state.profile.runs}`,
+    closed: false,
+    finalResources: snapshotRunResources(run),
+  }
   state.run = null
 }
 
-function settle(state: GameState, random: () => number): void {
+function settle(state: GameState, random: () => number, damageSource?: LootboxId): void {
   const run = state.run
   if (!run || !run.starterOpened) return
   if (run.health <= 0) {
-    finish(state, 'defeat')
+    const reason = damageSource === 'mimica' ? 'mimic' : damageSource === 'ladrao' ? 'thief' : damageSource === 'chefe' ? 'boss' : 'health-depleted'
+    finish(state, 'defeat', reason)
   } else if (!run.pending) {
     completeContract(run)
     if (run.energy < getOpeningCost(run)) {
       log(run, 'Sem energia suficiente para outra abertura: retirada automática.')
-      finish(state, 'retreat')
+      finish(state, 'retreat', 'insufficient-energy')
     } else if (run.queue.length === 0) {
       addBoxes(run, 3, 1, random)
       log(run, 'Você encontrou três novas caixas.')
@@ -476,6 +564,7 @@ function createRun(profile: Profile): Run {
     coins: 0,
     keys: 0,
     opened: 0,
+    totalOpened: 0,
     queue: [],
     inventory: [],
     relics: [],
@@ -633,7 +722,7 @@ function winBoss(state: GameState): void {
   log(run, `Chefe do andar ${run.floor} vencido: +20 moedas.`)
   finishPending(run)
   if (run.floor === 3) {
-    finish(state, 'victory')
+    finish(state, 'victory', 'final-boss')
   } else {
     run.floor++
     run.opened = 0
@@ -811,6 +900,12 @@ export function transition(state: GameState, action: GameAction, random: () => n
     return next
   }
   if (state.lastRace) return state
+  if (action.type === 'dismiss-result') {
+    if (!state.result || !entityId(action.resultId) || state.result.id !== action.resultId || state.result.closed !== false) return state
+    const next = structuredClone(state)
+    next.result!.closed = true
+    return next
+  }
   if (action.type === 'start') {
     if (state.run) return state
     const next = structuredClone(state)
@@ -849,7 +944,7 @@ export function transition(state: GameState, action: GameAction, random: () => n
   }
   if (action.type === 'retreat' && !run.pending) {
     const next = structuredClone(state)
-    finish(next, 'retreat')
+    finish(next, 'retreat', 'manual-retreat')
     return next
   }
   if (!run.starterOpened) return state
@@ -857,7 +952,7 @@ export function transition(state: GameState, action: GameAction, random: () => n
     if (!run.pending || !getChoices(state).some(choice => choice.id === action.choiceId && !choice.disabled)) return state
     const next = structuredClone(state)
     choose(next, action.choiceId, random)
-    settle(next, random)
+    settle(next, random, run.pending.kind)
     return next
   }
   if (run.pending) return state

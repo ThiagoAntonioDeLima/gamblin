@@ -23,7 +23,10 @@ function active(patch: Partial<Run> = {}): GameState & { run: Run } {
   const started = transition(initialGameState(), { type: 'start' }, fixedRandom)
   const ready = transition(started, { type: 'starter' }, fixedRandom)
   assert.ok(ready.run)
-  return { ...ready, run: { ...ready.run, ...patch } }
+  return { ...ready, run: {
+    ...ready.run, ...patch,
+    totalOpened: patch.totalOpened ?? (patch.opened ?? 0) + ((patch.floor ?? 1) - 1) * 6,
+  } }
 }
 
 function runOf(state: GameState): Run {
@@ -126,7 +129,7 @@ test('defeating three bosses ends in victory instead of creating a fourth floor'
 
   for (let floor = 1; floor <= 3; floor += 1) {
     const run = runOf(state)
-    state = { ...state, run: { ...run, opened: 5 } }
+    state = { ...state, run: { ...run, opened: 5, totalOpened: (run.totalOpened ?? 0) + 5 - run.opened } }
     state = transition(state, { type: 'boss' }, fixedRandom)
     assert.equal(runOf(state).pending?.kind, 'chefe')
     state = choose(state, 'boss:coins')

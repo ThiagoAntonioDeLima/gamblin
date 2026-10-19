@@ -37,7 +37,7 @@
 .choice-dialog .choice-intro .eyebrow { color: #e4c98f; font-size: 12px; line-height: 1.5; letter-spacing: .1em; margin: 0 0 8px; }
 .choice-dialog .choice-intro .choice-reflection { color: #acd5ee; font-size: 12px; line-height: 1.5; margin: 0 0 7px; }
 .choice-dialog .race-invitation { font-size: 13px; line-height: 1.6; padding: 11px 13px; }
-.choice-dialog .choices { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.choice-dialog .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .choice-dialog .choices button { padding: 15px; border-radius: 8px; min-height: 64px; }
 .choice-dialog .choices button strong { font-size: 16px; line-height: 1.35; }
 .choice-dialog .choices button span { color: #bfd0bb; font-size: 13px; line-height: 1.6; margin-top: 7px; }

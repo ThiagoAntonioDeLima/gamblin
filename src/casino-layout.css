@@ -11,6 +11,7 @@
   gap: 12px;
   min-width: 0;
   min-height: 0;
+  padding-bottom: 8px;
   overflow: hidden;
 }
 
@@ -105,6 +106,7 @@
 
 .mode-casino .box-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   align-items: center;
   justify-items: center;
@@ -114,6 +116,13 @@
   min-width: 0;
   min-height: 0;
   padding: 13px 12px;
+  animation-name: table-card-deal;
+}
+
+/* Deal inside the slot, so the card never slides under the lower panels. */
+@keyframes table-card-deal {
+  from { opacity: 0; transform: scale(.97); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .mode-casino .box-card .box-meta { align-self: start; font-size: .61rem; }
@@ -154,7 +163,7 @@
 
 .mode-casino .casino-bottom {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(180px, 1fr);
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   flex: 33 1 0;
   gap: 12px;
   min-width: 0;
@@ -218,7 +227,7 @@
   .mode-casino .hud-icon { width: 7px; height: 7px; }
   .mode-casino .run-actions button { font-size: .43rem; padding: 4px 3px; }
   .mode-casino .casino-hud > .fine-print { padding-top: 3px; font-size: .4rem; }
-  .mode-casino .casino-bottom { grid-template-columns: minmax(0, 3fr) minmax(160px, 1fr); gap: 10px; }
+  .mode-casino .casino-bottom { gap: 10px; }
 }
 
 @media (max-width: 760px) {
@@ -248,7 +257,7 @@
   .mode-casino .box-number { left: 8px; top: 28px; font-size: .45rem; }
   .mode-casino .box-card strong { font-size: .72rem; }
   .mode-casino .box-card .box-cost { font-size: .49rem; padding: 4px 5px; gap: 2px; }
-  .mode-casino .casino-bottom { grid-template-columns: minmax(0, 1fr) minmax(145px, .7fr); gap: 8px; }
+  .mode-casino .casino-bottom { gap: 8px; }
   .mode-casino .casino-history-pane .history-panel { padding: 12px; }
   .mode-casino .history-panel h2 { font-size: .88rem; margin-bottom: 9px; }
   .mode-casino .history-panel .event-log { font-size: .66rem; line-height: 1.5; padding-left: .9rem; }
@@ -263,7 +272,7 @@
 @media (max-width: 480px) {
   .app-shell.mode-casino { gap: 7px; padding: 8px 8px 0; }
   .mode-casino .casino-fixed-area { flex-grow: 66; gap: 9px; }
-  .mode-casino .casino-bottom { flex-grow: 34; grid-template-columns: minmax(0, 1fr) 132px; gap: 7px; }
+  .mode-casino .casino-bottom { flex-grow: 34; gap: 7px; }
   .mode-casino .masthead { gap: 6px 8px; padding-bottom: 7px; }
   .mode-casino .brand-lockup { gap: 7px; }
   .mode-casino .brand-lockup h1 { font-size: 1.5rem; }
@@ -413,4 +422,13 @@
 
 @media (max-height: 660px) {
   .mode-casino .starter .table-caption p { display: none; }
+}
+
+@media (max-width: 760px) and (max-height: 660px) {
+  .mode-casino .casino-fixed-area { flex-grow: 78; }
+  .mode-casino .casino-bottom { flex-grow: 22; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-casino .box-card { animation: none; }
 }
