@@ -10,11 +10,12 @@ export function useGame() {
 
   const dispatch = useCallback((action: GameAction) => {
     const next = transition(current.current, action)
-    if (next === current.current) return
+    if (next === current.current) return next
 
     current.current = next
     setState(next)
     setStorageUnavailable(!saveProgress(next))
+    return next
   }, [])
 
   return { state, dispatch, storageUnavailable }

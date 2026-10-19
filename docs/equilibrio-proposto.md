@@ -44,6 +44,6 @@ Status: equilíbrio inicial e interface provisória aprovados pelo usuário. A c
 
 ## Interface proposta
 
-Interface provisória responsiva e acessível, em português, com painel de recursos, fila de caixas, escolhas com seus custos, inventário, histórico de eventos e melhorias permanentes. Estilo simples com contraste claro/escuro conforme a preferência do navegador; sem arte definitiva nesta etapa. As probabilidades aparecem nas escolhas relevantes.
+Interface originalmente aprovada como provisória. Em um gate posterior, o usuário aprovou o visual de cassino durante as expedições, a lojinha entre runs, artes próprias das 18 caixas, aberturas animadas, corrida de animais e janela central fixa com rolagem interna. A decisão visual atual está registrada em `visual-aprovado.md`. As probabilidades continuam aparecendo nas escolhas relevantes.
 
 O usuário aprovou os valores iniciais e a interface provisória acima. Mudanças futuras de regras ou direção artística voltam ao usuário antes da implementação.

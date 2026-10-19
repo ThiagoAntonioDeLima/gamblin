@@ -79,10 +79,21 @@ export interface RunResult {
   log: string[]
 }
 
+export type AnimalId = typeof ANIMALS[number]['id']
+
+export interface RaceResult {
+  id: string
+  winner: AnimalId
+  selected: AnimalId
+  stake: number
+  payout: number
+}
+
 export interface GameState {
   profile: Profile
   run: Run | null
   result: RunResult | null
+  lastRace?: RaceResult | null
 }
 
 export interface Choice {
@@ -94,6 +105,7 @@ export interface Choice {
 
 export type GameAction =
   | { type: 'start' }
+  | { type: 'dismiss-race' }
   | { type: 'starter' }
   | { type: 'open'; boxId: string }
   | { type: 'choose'; choiceId: string }
@@ -141,6 +153,7 @@ export function initialGameState(): GameState {
     },
     run: null,
     result: null,
+    lastRace: null,
   }
 }
 
@@ -171,6 +184,14 @@ function entityId(value: unknown): value is string {
 function validBox(value: unknown): value is Box {
   return record(value) && entityId(value.id) && typeof value.type === 'string' &&
     BOX_TYPES.includes(value.type) && rarity(value.rarity) && integer(value.depth, 1, 4)
+}
+
+function validRace(value: unknown): value is RaceResult {
+  return record(value) && entityId(value.id) &&
+    ANIMALS.some(animal => animal.id === value.winner) &&
+    ANIMALS.some(animal => animal.id === value.selected) &&
+    integer(value.stake) && [1, 5, 10].includes(value.stake) &&
+    value.payout === (value.winner === value.selected ? value.stake * 3 : 0)
 }
 
 function validPending(value: unknown): value is Pending {
@@ -237,6 +258,7 @@ function validRun(value: unknown): value is Run {
 /** Validates persisted data before any game or interface code can access it. */
 export function isGameState(value: unknown): value is GameState {
   if (!record(value) || !record(value.profile)) return false
+  if (value.lastRace !== undefined && value.lastRace !== null && !validRace(value.lastRace)) return false
   const profile = value.profile
   if (!integer(profile.essence) || !integer(profile.bankRemainder, 0, 4) || !integer(profile.runs) ||
     !integer(profile.wins, 0, profile.runs) || !record(profile.upgrades) ||
@@ -472,7 +494,7 @@ function createRun(profile: Profile): Run {
   }
 }
 
-const ANIMALS = [
+export const ANIMALS = [
   { id: 'coruja', name: 'Coruja' },
   { id: 'raposa', name: 'Raposa' },
   { id: 'lobo', name: 'Lobo' },
@@ -493,6 +515,7 @@ function countRewards(run: Run, rewardRarity: Rarity): number {
 
 /** Describes each pending decision, including its cost and why it may be unavailable. */
 export function getChoices(state: GameState): Choice[] {
+  if (state.lastRace) return []
   const run = state.run
   const pending = run?.pending
   if (!run || !pending) return []
@@ -640,6 +663,13 @@ function choose(state: GameState, id: string, random: () => number): void {
       const winner = pick(ANIMALS, random)
       const won = winner.id === animal
       if (won) run.coins += stake * 3
+      state.lastRace = {
+        id: `race:${state.profile.runs + 1}:${run.floor}:${pending.box.id}`,
+        winner: winner.id,
+        selected: animal as AnimalId,
+        stake,
+        payout: won ? stake * 3 : 0,
+      }
       log(run, `Sorteio: ${winner.name}. ${won ? `Acerto! Pagamento de ${stake * 3} moedas (inclui a aposta).` : `Você perdeu a aposta de ${stake} moedas.`}`)
       break
     }
@@ -774,11 +804,19 @@ function choose(state: GameState, id: string, random: () => number): void {
 /** Applies one valid action to a copy. Invalid actions preserve both state and resources. */
 export function transition(state: GameState, action: GameAction, random: () => number = Math.random): GameState {
   if (!isGameState(state) || !record(action)) return state
+  if (action.type === 'dismiss-race') {
+    if (!state.lastRace) return state
+    const next = structuredClone(state)
+    next.lastRace = null
+    return next
+  }
+  if (state.lastRace) return state
   if (action.type === 'start') {
     if (state.run) return state
     const next = structuredClone(state)
     next.run = createRun(next.profile)
     next.result = null
+    next.lastRace = null
     return next
   }
   if (action.type === 'upgrade') {
